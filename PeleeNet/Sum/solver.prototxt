@@ -1,0 +1,24 @@
+
+net: "models/peleenet/train_val.prototxt" 
+#test_net: "test_densenet.prototxt"
+test_iter: 10000
+test_interval: 1000
+base_lr: 0.04
+iter_size: 8 #global batch size = batch_size * iter_size
+display: 10
+max_iter: 50001
+lr_policy: "multistep"
+gamma: 0.5
+momentum: 0.9
+weight_decay: 0.0001
+solver_mode: GPU
+random_seed: 831486
+stepvalue: 10000
+stepvalue: 20000
+stepvalue: 30000
+stepvalue: 40000
+test_initialization: false
+type: "Nesterov"
+snapshot_prefix: "models/peleenet/train"
+snapshot: 1000
+
