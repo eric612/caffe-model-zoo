@@ -32,7 +32,8 @@ def _conv_block(net, bottom, name, num_output, use_relu=True, kernel_size=3, str
             dict(lr_mult=1, decay_mult=0),
             dict(lr_mult=2, decay_mult=0),],
         }
-    scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0),**scale_kwargs)
+    #scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0),**scale_kwargs)
+    scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0))
     sb_name = '{}{}{}'.format(scale_prefix, name, scale_postfix)
     net[sb_name] = scale
 
@@ -117,7 +118,7 @@ def _stem_block(net, from_layer, num_init_features):
 
 def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,8], bottleneck_width=[1,2,4,4], num_init_features=32, init_kernel_size=3, use_stem_block=True):
 
-    assert from_layer in net.keys()
+    assert from_layer in net.tops.keys()
 
     # Initial convolution
     if use_stem_block:
@@ -153,7 +154,7 @@ def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,
 
 
 def add_classify_header(net, classes=120):
-  bottom = net.keys()[-1]
+  bottom = net.tops.keys()[-1]
 
   net.global_pool = L.Pooling(net[bottom], pool=P.Pooling.AVE, global_pooling=True) 
 
@@ -163,7 +164,7 @@ def add_classify_header(net, classes=120):
   return net
 
 def add_classify_loss(net, classes=120):
-  bottom = net.keys()[-1]
+  bottom = net.tops.keys()[-1]
 
   net.global_pool = L.Pooling(net[bottom], pool=P.Pooling.AVE, global_pooling=True) 
 
@@ -174,14 +175,14 @@ def add_classify_loss(net, classes=120):
   net.accuracy_top5 = L.Accuracy(net.classifier, net.label,top_k = 5)
   return net
 def add_yolo_loss(net):
-  bottom = net.keys()[-1]
+  bottom = net.tops.keys()[-1]
   conv = L.Convolution(net[bottom], kernel_size=1, stride=1, 
                     num_output=125,  pad=0, bias_term=True, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))
   
   net.RegionLoss = L.RegionLoss(conv,net.label,top='det_loss',num_class=20,coords=4,num=5,softmax=1,jitter=0.2,rescore=0,object_scale=5.0,noobject_scale=1.0,class_scale=1.0,
 					coord_scale=1.0,absolute=1,thresh=0.6,random=0,biases=[1.08,1.19,3.42,4.41,6.63,11.38,9.42,5.11,16.62,10.52])
 def add_yolo_detection(net):
-  bottom = net.keys()[-1]
+  bottom = net.tops.keys()[-1]
   conv = L.Convolution(net[bottom], kernel_size=1, stride=1, 
                     num_output=125,  pad=0, bias_term=True, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))
   net.YoloDetectionOutput = L.YoloDetectionOutput(conv,net.label,top='detection_out',num_classes=20,coords=4,confidence_threshold=0.01,nms_threshold=.45
@@ -192,10 +193,10 @@ if __name__ == '__main__':
   source_lmdb = '/media/data/data/ilsvrc12_train_lmdb'
   #source_lmdb = 'examples/imagenet/ilsvrc12_train_lmdb'
   net.data, net.label = L.Data(name='data',batch_size=32, backend=P.Data.LMDB, source=source_lmdb,
-                             transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5),
+                             transform_param=dict(crop_size=227,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=True),
 							 ntop=2 , include={'phase':caffe.TRAIN})
   net.test_data, net.test_label = L.Data(name='data',batch_size=5, backend=P.Data.LMDB, source='examples/imagenet/ilsvrc12_val_lmdb',
-                             transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5),
+                             transform_param=dict(crop_size=227,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=False),
   							 ntop=2 , top=['data','label'],include={'phase':caffe.TEST})							 
   PeleeNetBody(net, from_layer='data')
   #add_classify_header(net,classes=1000)
