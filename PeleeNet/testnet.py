@@ -32,8 +32,7 @@ def _conv_block(net, bottom, name, num_output, use_relu=True, kernel_size=3, str
             dict(lr_mult=1, decay_mult=0),
             dict(lr_mult=2, decay_mult=0),],
         }
-    #scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0),**scale_kwargs)
-    scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0))
+    scale = L.Scale(batch_norm, bias_term=True, in_place=True, filler=dict(value=1), bias_filler=dict(value=0),**scale_kwargs)
     sb_name = '{}{}{}'.format(scale_prefix, name, scale_postfix)
     net[sb_name] = scale
 
@@ -63,15 +62,11 @@ def _dense_block(net, from_layer, num_layers, growth_rate, name,bottleneck_width
     cb2 = _conv_block(net, x, '{}/branch2a'.format(base_name), kernel_size=1, stride=1, 
                                num_output=inter_channel, pad=0)
     cb2 = _conv_block(net, cb2, '{}/branch2b'.format(base_name), kernel_size=3, stride=1, 
-                               num_output=inter_channel, pad=1)
+                               num_output=growth_rate, pad=1)
     cb2 = _conv_block(net, cb2, '{}/branch2c'.format(base_name), kernel_size=3, stride=1, 
                                num_output=growth_rate, pad=1)
 
-    x2 = L.Eltwise(cb1, cb2,operation=P.Eltwise.SUM)
-    eltwise_name = '{}/eltwise'.format(base_name)
-    net[eltwise_name] = x2
-	
-    x = L.Concat(x, x2, axis=1)
+    x = L.Concat(x, cb1, cb2, axis=1)
     concate_name = '{}/concat'.format(base_name)
     net[concate_name] = x
 
@@ -116,7 +111,7 @@ def _stem_block(net, from_layer, num_init_features):
 
   return stem3
 
-def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,8], bottleneck_width=[1,2,4,4], num_init_features=32, init_kernel_size=3, use_stem_block=True):
+def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,8,6], bottleneck_width=[1,2,4,4], num_init_features=32, init_kernel_size=3, use_stem_block=True):
 
     assert from_layer in net.tops.keys()
 
@@ -139,7 +134,7 @@ def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,
 
     for idx, num_layers in enumerate(block_config):
       from_layer = _dense_block(net, from_layer, num_layers, growth_rate, name='stage{}'.format(idx+1), bottleneck_width=bottleneck_widths[idx])
-      total_filter += int(growth_rate * num_layers / 2)
+      total_filter += growth_rate * num_layers
       print(total_filter)
       if idx == len(block_config) - 1:
         with_pooling=False
@@ -170,7 +165,7 @@ def add_classify_loss(net, classes=120):
 
   net.classifier = L.InnerProduct(net.global_pool, num_output=classes, bias_term=True, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))
 
-  net.loss = L.SoftmaxWithLoss(net.classifier, net.label)
+  net.loss = L.SoftmaxWithLoss(net.classifier, net.label,include={'phase':caffe.TRAIN})
   net.accuracy = L.Accuracy(net.classifier, net.label)
   net.accuracy_top5 = L.Accuracy(net.classifier, net.label,top_k = 5)
   return net
@@ -193,10 +188,10 @@ if __name__ == '__main__':
   source_lmdb = '/media/data/data/ilsvrc12_train_lmdb'
   #source_lmdb = 'examples/imagenet/ilsvrc12_train_lmdb'
   net.data, net.label = L.Data(name='data',batch_size=32, backend=P.Data.LMDB, source=source_lmdb,
-                             transform_param=dict(crop_size=227,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=True),
+                             transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=True),
 							 ntop=2 , include={'phase':caffe.TRAIN})
-  net.test_data, net.test_label = L.Data(name='data',batch_size=5, backend=P.Data.LMDB, source='examples/imagenet/ilsvrc12_val_lmdb',
-                             transform_param=dict(crop_size=227,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=False),
+  net.test_data, net.test_label = L.Data(name='data',batch_size=10, backend=P.Data.LMDB, source='examples/imagenet/ilsvrc12_val_lmdb',
+                             transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5, mirror=False),
   							 ntop=2 , top=['data','label'],include={'phase':caffe.TEST})							 
   PeleeNetBody(net, from_layer='data')
   #add_classify_header(net,classes=1000)
@@ -205,7 +200,7 @@ if __name__ == '__main__':
   #add_yolo_detection(net)
   #print(net.to_proto())
 # then write back out:
-  with open('net2.prototxt', 'w') as f:
+  with open('train_val.prototxt', 'w') as f:
     f.write(text_format.MessageToString(net.to_proto()))
 
 

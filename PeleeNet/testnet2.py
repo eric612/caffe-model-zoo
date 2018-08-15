@@ -10,10 +10,16 @@ from google.protobuf import text_format
 
 
 def _conv_block(net, bottom, name, num_output, use_relu=True, kernel_size=3, stride=1, pad=1, bn_prefix='', bn_postfix='/bn', 
-    scale_prefix='', scale_postfix='/scale'):
-
-    conv = L.Convolution(bottom, kernel_size=kernel_size, stride=stride, 
+    scale_prefix='', scale_postfix='/scale',direction=0):
+    if direction is 0 :
+        conv = L.Convolution(bottom, kernel_size=kernel_size, stride=stride, 
                     num_output=num_output,  pad=pad, bias_term=False, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))
+    elif direction is 1 : 
+        conv = L.Convolution(bottom, kernel_w=kernel_size, kernel_h=1, stride=stride, 
+                    num_output=num_output,  pad_w=pad,pad_h=0, bias_term=False, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))	
+    elif direction is 2 : 
+        conv = L.Convolution(bottom, kernel_w=1, kernel_h=kernel_size, stride=stride, 
+                    num_output=num_output,  pad_h=pad,pad_w=0, bias_term=False, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))	
     net[name] = conv
 
     bn_name = '{}{}{}'.format(bn_prefix, name, bn_postfix)
@@ -52,29 +58,29 @@ def _dense_block(net, from_layer, num_layers, growth_rate, name,bottleneck_width
 
   for i in range(num_layers):
     base_name = '{}_{}'.format(name,i+1)
-    inter_channel = int(growth_rate * bottleneck_width / 4) * 4
+    inter_channel = int(growth_rate / bottleneck_width / 4) * 4
 	
-    cb1 = _conv_block(net, x, '{}/branch1'.format(base_name), kernel_size=1, stride=1, 
+    cb1 = _conv_block(net, x, '{}/branch1a'.format(base_name), kernel_size=1, stride=1, 
+                               num_output=inter_channel, pad=0)
+    cb1 = _conv_block(net, cb1, '{}/branch1b'.format(base_name), kernel_size=3, stride=1, 
+                               num_output=growth_rate, pad=1,direction=1)					   
+
+    cb1 = _conv_block(net, cb1, '{}/branch1c'.format(base_name), kernel_size=3, stride=1, 
+                               num_output=growth_rate, pad=1,direction=2)
+    cb1 = _conv_block(net, cb1, '{}/branch1d'.format(base_name), kernel_size=1, stride=1, 
                                num_output=growth_rate, pad=0)
 							   
-
     cb2 = _conv_block(net, x, '{}/branch2a'.format(base_name), kernel_size=1, stride=1, 
                                num_output=inter_channel, pad=0)
     cb2 = _conv_block(net, cb2, '{}/branch2b'.format(base_name), kernel_size=3, stride=1, 
-                               num_output=growth_rate, pad=1)
-							   
-    cb3 = _conv_block(net, x, '{}/branch3a'.format(base_name), kernel_size=1, stride=1, 
-                               num_output=inter_channel, pad=0)
-    cb3 = _conv_block(net, cb3, '{}/branch3b'.format(base_name), kernel_size=3, stride=1, 
-                               num_output=inter_channel, pad=1)
-    cb3 = _conv_block(net, cb3, '{}/branch3c'.format(base_name), kernel_size=3, stride=1, 
-                               num_output=growth_rate, pad=1)
+                               num_output=growth_rate, pad=1,direction=2)					   
 
-    x2 = L.Eltwise(cb1, cb2, cb3,operation=P.Eltwise.MAX)
-    eltwise_name = '{}/eltwise'.format(base_name)
-    net[eltwise_name] = x2
-	
-    x = L.Concat(x, x2, axis=1)
+    cb2 = _conv_block(net, cb2, '{}/branch2c'.format(base_name), kernel_size=3, stride=1, 
+                               num_output=growth_rate, pad=1,direction=1)
+    cb2 = _conv_block(net, cb2, '{}/branch2d'.format(base_name), kernel_size=1, stride=1, 
+                               num_output=growth_rate, pad=0)
+
+    x = L.Concat(x, cb1, cb2, axis=1)
     concate_name = '{}/concat'.format(base_name)
     net[concate_name] = x
 
@@ -119,7 +125,7 @@ def _stem_block(net, from_layer, num_init_features):
 
   return stem3
 
-def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,8], bottleneck_width=[1,2,4,4], num_init_features=32, init_kernel_size=3, use_stem_block=True):
+def PeleeNetBody(net, from_layer='data', growth_rate=[32,64,32,32], block_config = [3,4,8,6], bottleneck_width=[4,2,2,1], num_init_features=32, init_kernel_size=3, use_stem_block=True):
 
     assert from_layer in net.keys()
 
@@ -141,8 +147,8 @@ def PeleeNetBody(net, from_layer='data', growth_rate=32, block_config = [3,5,10,
         bottleneck_widths = [bottleneck_width] * 4
 
     for idx, num_layers in enumerate(block_config):
-      from_layer = _dense_block(net, from_layer, num_layers, growth_rate, name='stage{}'.format(idx+1), bottleneck_width=bottleneck_widths[idx])
-      total_filter += int(growth_rate * num_layers / 2)
+      from_layer = _dense_block(net, from_layer, num_layers, growth_rate[idx], name='stage{}'.format(idx+1), bottleneck_width=bottleneck_widths[idx])
+      total_filter += growth_rate[idx] * num_layers
       print(total_filter)
       if idx == len(block_config) - 1:
         with_pooling=False
@@ -195,10 +201,10 @@ if __name__ == '__main__':
   #net.data = L.Input(shape=[dict(dim=[1, 3, 224, 224])])
   source_lmdb = '/media/data/data/ilsvrc12_train_lmdb'
   #source_lmdb = 'examples/imagenet/ilsvrc12_train_lmdb'
-  net.data, net.label = L.Data(name='data',batch_size=16, backend=P.Data.LMDB, source=source_lmdb,
+  net.data, net.label = L.Data(name='data',batch_size=32, backend=P.Data.LMDB, source=source_lmdb,
                              transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5),
 							 ntop=2 , include={'phase':caffe.TRAIN})
-  net.test_data, net.test_label = L.Data(name='data',batch_size=25, backend=P.Data.LMDB, source='examples/imagenet/ilsvrc12_val_lmdb',
+  net.test_data, net.test_label = L.Data(name='data',batch_size=20, backend=P.Data.LMDB, source='examples/imagenet/ilsvrc12_val_lmdb',
                              transform_param=dict(crop_size=224,mean_value=[127.5,127.5,127.5],scale=1/127.5),
   							 ntop=2 , top=['data','label'],include={'phase':caffe.TEST})							 
   PeleeNetBody(net, from_layer='data')
@@ -208,7 +214,7 @@ if __name__ == '__main__':
   #add_yolo_detection(net)
   #print(net.to_proto())
 # then write back out:
-  with open('net2.prototxt', 'w') as f:
+  with open('train_val.prototxt', 'w') as f:
     f.write(text_format.MessageToString(net.to_proto()))
 
 
