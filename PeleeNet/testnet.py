@@ -165,7 +165,8 @@ def add_classify_loss(net, classes=120):
 
   net.classifier = L.InnerProduct(net.global_pool, num_output=classes, bias_term=True, weight_filler=dict(type='xavier'), bias_filler=dict(type='constant'))
 
-  net.loss = L.SoftmaxWithLoss(net.classifier, net.label,include={'phase':caffe.TRAIN})
+  net.train_loss = L.SoftmaxWithLoss(net.classifier, net.label,include={'phase':caffe.TRAIN})
+  net.test_loss = L.SoftmaxWithLoss(net.classifier, net.label,include={'phase':caffe.TEST})
   net.accuracy = L.Accuracy(net.classifier, net.label)
   net.accuracy_top5 = L.Accuracy(net.classifier, net.label,top_k = 5)
   return net
