@@ -1,0 +1,3 @@
+[submodule "MnasNet"]
+	path = MnasNet
+	url = https://github.com/eric612/MnasNet-caffe.git
